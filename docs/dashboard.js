@@ -351,8 +351,12 @@ function escapeHtml(str) {
 }
 
 function downloadFilteredCsv() {
-  const columns = ['id', 'title', 'authors', 'journal', 'docType', 'date', 'fiscalPeriod', 'facilities', 'citations', 'ordBroad', 'ordAmp'];
-  const header = columns.join(',');
+  const columns = ['id', 'title', 'authors', 'journal', 'docType', 'date', 'fiscalPeriod', 'facilities', 'citations', 'ordBroad', 'ordAmp',
+    'doiLink', 'pubmedLink', 'pmcLink', 'sourceLink', 'dimensionsLink'];
+  const labels = {
+    doiLink: 'DOI Link', pubmedLink: 'PubMed Link', pmcLink: 'PMC Link', sourceLink: 'Source Link', dimensionsLink: 'Dimensions Link',
+  };
+  const header = columns.map(c => labels[c] || c).join(',');
   const rows = filtered.map(p => columns.map(c => {
     let v = p[c];
     if (Array.isArray(v)) v = v.join('; ');

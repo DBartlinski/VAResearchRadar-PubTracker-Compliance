@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from processors.dashboard_data import DashboardDataset, load_dashboard_dataset, split_values
 from processors.pubtracker_compliance import (
     UNATTRIBUTED,
+    add_record_links,
     build_station_lookup,
     classify_pubtracker_rows,
     exclusion_reasons,
@@ -38,6 +39,10 @@ COMPLIANCE_TAB_TITLE = "Dimensions-PubTracker Complience Oct 2026"
 DIM_TO_PT_TAB_TITLE = "Dimensions to PubTracker (Build 01)"
 BUILD_02_TAB_TITLE = "Not in PubTracker (Build 02)"
 NOT_IN_PUBTRACKER = "Not in PubTracker"
+LINK_LABELS = {
+    "DOI Link": "DOI", "PubMed Link": "PubMed", "PMC Link": "PMC",
+    "Source Link": "Source", "Dimensions Link": "Dimensions",
+}
 ORD_NO_SIGNAL_LABEL = "No ORD signal detected"
 DERIVED_EXPORT_COLUMNS = [
     "Canonical Date", "Date Source", "Date Precision", "Calendar Year",
@@ -287,6 +292,7 @@ def render_records(publications: pd.DataFrame, source_columns: tuple[str, ...]) 
     )
     export_columns = list(source_columns) + [column for column in DERIVED_EXPORT_COLUMNS if column in publications]
     export = publications[export_columns].copy()
+    export = add_record_links(export, publications)
     st.download_button(
         "Download filtered records",
         export.to_csv(index=False).encode("utf-8-sig"),
@@ -582,6 +588,7 @@ def render_pubtracker_compliance(dataset: DashboardDataset) -> None:
 
     all_missing = scoped[scoped["Publication ID"].isin(missing_ids)][[c for c in columns if c in scoped]].copy()
     all_missing["Canonical Date"] = all_missing["Canonical Date"].dt.strftime("%Y-%m-%d")
+    all_missing = add_record_links(all_missing, scoped)
     st.download_button(
         "Download all missing records", all_missing.to_csv(index=False).encode("utf-8-sig"),
         file_name="dimensions_missing_from_pubtracker.csv", mime="text/csv",
@@ -709,11 +716,12 @@ def render_dimensions_to_pubtracker(dataset: DashboardDataset) -> None:
     )
     download_cols = st.columns(2)
     download_cols[0].download_button(
-        "Download this facility's records", _csv(facility_missing),
+        "Download this facility's records", _csv(add_record_links(facility_missing, scoped)),
         file_name=f"not_in_pubtracker_{selected[:40].replace(' ', '_')}.csv", mime="text/csv", key="d2p_dl_facility",
     )
     download_cols[1].download_button(
-        "Download all records not in PubTracker", _csv(_format_dates(not_found[columns], ["Canonical Date"])),
+        "Download all records not in PubTracker",
+        _csv(add_record_links(_format_dates(not_found[columns], ["Canonical Date"]), scoped)),
         file_name="dimensions_not_in_pubtracker.csv", mime="text/csv", key="d2p_dl_all_missing",
     )
 
@@ -723,7 +731,10 @@ def render_dimensions_to_pubtracker(dataset: DashboardDataset) -> None:
         ["Dimensions Date", "PubTracker Date Created", "PubTracker Publication Date"],
     )
     st.dataframe(matched, use_container_width=True, hide_index=True, height=380)
-    st.download_button("Download matched records", _csv(matched), file_name="dimensions_pubtracker_matched.csv", mime="text/csv", key="d2p_dl_matched")
+    st.download_button(
+        "Download matched records", _csv(add_record_links(matched, scoped)),
+        file_name="dimensions_pubtracker_matched.csv", mime="text/csv", key="d2p_dl_matched",
+    )
 
     fuzzy = results[results["Match Type"].eq("Matched (fuzzy)")].merge(
         scoped[["Publication ID", "Title"]], on="Publication ID"
@@ -752,7 +763,11 @@ def render_dimensions_to_pubtracker(dataset: DashboardDataset) -> None:
             ["Date Created", "Publication Date"],
         )
         st.dataframe(excluded_table, use_container_width=True, hide_index=True, height=360)
-        st.download_button("Download matched-but-excluded", _csv(excluded_table), file_name="pubtracker_matched_but_excluded.csv", mime="text/csv", key="d2p_dl_excluded")
+        st.download_button(
+            "Download matched-but-excluded",
+            _csv(add_record_links(excluded_table, publications, id_column="Dimensions Publication ID")),
+            file_name="pubtracker_matched_but_excluded.csv", mime="text/csv", key="d2p_dl_excluded",
+        )
 
 
 def render_not_in_pubtracker_simple(dataset: DashboardDataset) -> None:
@@ -883,9 +898,7 @@ def _render_facility_records(frame: pd.DataFrame, key: str, file_name: str, pub_
         on_select="rerun", selection_mode="single-row", key=f"{key}_table",
         column_config={
             "ORD Funded": st.column_config.CheckboxColumn("ORD Funded"),
-            "DOI": st.column_config.LinkColumn("DOI", display_text="DOI"),
-            "PubMed": st.column_config.LinkColumn("PubMed", display_text="PubMed"),
-            "Dimensions URL": st.column_config.LinkColumn("Dimensions", display_text="Open"),
+            **{column: st.column_config.LinkColumn(label, display_text=label) for column, label in LINK_LABELS.items()},
             "Match Score": st.column_config.NumberColumn("Match Score", format="%.0f"),
         },
     )
@@ -914,7 +927,7 @@ def _render_facility_records(frame: pd.DataFrame, key: str, file_name: str, pub_
                 f"**PubTracker match:** {record['Match Type']}, score {record['Match Score']:.0f}, "
                 f"Record ID {record['PubTracker Record ID']}"
             )
-        links = [f"[{label}]({record[column]})" for label, column in (("DOI", "DOI"), ("PubMed", "PubMed"), ("Dimensions", "Dimensions URL")) if record[column]]
+        links = [f"[{label}]({record[column]})" for column, label in LINK_LABELS.items() if record[column]]
         if links:
             st.markdown(" · ".join(links))
 

@@ -3,7 +3,7 @@
 // Build 02: Dimensions publications not in PubTracker. Data from data/not_in_pubtracker.json
 // (build_static_dashboard_data.py), matched at a fixed 90% title threshold; Dimensions fields only.
 (function () {
-  const R = { ID: 0, DATE: 1, FP: 2, TITLE: 3, JOURNAL: 4, DOI: 5, PMID: 6, FACS: 7, FOUND: 8, ORD: 9, CODES: 10, PORTFOLIO: 11, FUNDERS: 12, GRANTS: 13 };
+  const R = { ID: 0, DATE: 1, FP: 2, TITLE: 3, JOURNAL: 4, DOI: 5, PMID: 6, FACS: 7, FOUND: 8, ORD: 9, CODES: 10, PORTFOLIO: 11, FUNDERS: 12, GRANTS: 13, PMC: 14, SOURCE: 15 };
   const MAX_ROWS = 500;
   let payload = null;
   let view = 'missing';
@@ -35,8 +35,16 @@
     return [
       r[R.DOI] ? ['DOI', `https://doi.org/${r[R.DOI]}`] : null,
       r[R.PMID] ? ['PubMed', `https://pubmed.ncbi.nlm.nih.gov/${r[R.PMID]}/`] : null,
+      r[R.PMC] ? ['PMC', `https://pmc.ncbi.nlm.nih.gov/articles/${r[R.PMC]}/`] : null,
+      r[R.SOURCE] ? ['Source', r[R.SOURCE]] : null,
       ['Dimensions', `https://va.dimensions.ai/details/publication/${r[R.ID]}`],
     ].filter(Boolean);
+  }
+
+  // Full URL per link type, blank when the record has none.
+  function linkCells(r) {
+    const byName = Object.fromEntries(links(r));
+    return ['DOI', 'PubMed', 'PMC', 'Source', 'Dimensions'].map(name => byName[name] || '');
   }
 
   function renderSummary(records) {
@@ -179,9 +187,10 @@
       'pubtracker_compliance_by_facility.csv'));
     $('b02DownloadList').addEventListener('click', () => download(
       [['Dimensions Date', 'Fiscal Period', 'Facility', 'Title', 'Journal', 'In PubTracker', 'ORD Funded', 'VA Grant Codes',
-        'ORD Portfolio', 'Funders', 'Grant Numbers', 'DOI', 'PMID', 'Publication ID'],
+        'ORD Portfolio', 'Funders', 'Grant Numbers', 'DOI Link', 'PubMed Link', 'PMC Link', 'Source Link', 'Dimensions Link',
+        'DOI', 'PMID', 'Publication ID'],
         ...listRows.map(({ r, facility }) => [r[R.DATE], r[R.FP], facility, r[R.TITLE], r[R.JOURNAL], r[R.FOUND] ? 'Yes' : 'No',
-          r[R.ORD] ? 'Yes' : 'No', r[R.CODES], r[R.PORTFOLIO], r[R.FUNDERS], r[R.GRANTS], r[R.DOI], r[R.PMID], r[R.ID]])],
+          r[R.ORD] ? 'Yes' : 'No', r[R.CODES], r[R.PORTFOLIO], r[R.FUNDERS], r[R.GRANTS], ...linkCells(r), r[R.DOI], r[R.PMID], r[R.ID]])],
       view === 'entered' ? 'dimensions_in_pubtracker_by_facility.csv' : 'dimensions_not_in_pubtracker_by_facility.csv'));
     render();
   }

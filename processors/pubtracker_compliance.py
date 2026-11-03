@@ -246,16 +246,44 @@ def quarter_rates(results: pd.DataFrame, scoped: pd.DataFrame) -> pd.DataFrame:
     return summary.sort_values("Fiscal Period").reset_index(drop=True)
 
 
+LINK_COLUMNS = ["DOI Link", "PubMed Link", "PMC Link", "Source Link", "Dimensions Link"]
 FACILITY_RECORD_COLUMNS = [
     "Dimensions Date", "Fiscal Period", "Facility", "Title", "Journal", "Document Type",
     "ORD Funded", "VA Grant Codes", "ORD Portfolio", "Funders", "Grant Numbers",
-    "DOI", "PubMed", "Dimensions URL", "Publication ID",
+    *LINK_COLUMNS, "Publication ID",
 ]
 MATCH_COLUMNS = ["Match Type", "Match Score", "PubTracker Record ID"]
 
 
 def _text(value) -> str:
     return value if isinstance(value, str) else ""
+
+
+def record_links(row) -> dict[str, str]:
+    """Every active link for one Dimensions record; blank when Dimensions has none."""
+    pmcid = _text(row.get("PMCID")).strip()
+    pub_id = _text(row.get("Publication ID"))
+    return {
+        "DOI Link": _text(row.get("DOI Link")),
+        "PubMed Link": _text(row.get("PubMed Link")),
+        "PMC Link": f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/" if pmcid.upper().startswith("PMC") else "",
+        "Source Link": _text(row.get("Source Linkout")),
+        "Dimensions Link": _text(row.get("Dimensions for Veterans Affairs URL"))
+        or (f"https://va.dimensions.ai/details/publication/{pub_id}" if pub_id else ""),
+    }
+
+
+def add_record_links(frame: pd.DataFrame, publications: pd.DataFrame, id_column: str = "Publication ID") -> pd.DataFrame:
+    """Append LINK_COLUMNS to an export, looked up from the Dimensions records by ID."""
+    needed = publications[publications["Publication ID"].isin(frame[id_column])]
+    table = pd.DataFrame(
+        [{"Publication ID": row["Publication ID"], **record_links(row)} for row in needed.to_dict("records")],
+        columns=["Publication ID", *LINK_COLUMNS],
+    ).drop_duplicates("Publication ID")
+    base = frame.drop(columns=[column for column in LINK_COLUMNS if column in frame])
+    merged = base.merge(table.rename(columns={"Publication ID": id_column}), on=id_column, how="left")
+    merged[LINK_COLUMNS] = merged[LINK_COLUMNS].fillna("")
+    return merged
 
 
 def records_by_facility(
@@ -282,9 +310,7 @@ def records_by_facility(
             "ORD Portfolio": _text(row.get("ORD Broad Portfolios")),
             "Funders": _text(row.get("Funder")),
             "Grant Numbers": _text(row.get("Supporting Grants")),
-            "DOI": _text(row.get("DOI Link")),
-            "PubMed": _text(row.get("PubMed Link")),
-            "Dimensions URL": _text(row.get("Dimensions for Veterans Affairs URL")),
+            **record_links(row),
             "Publication ID": pub_id,
         }
         if in_pubtracker:

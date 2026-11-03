@@ -3,8 +3,10 @@ import unittest
 import pandas as pd
 
 from processors.pubtracker_compliance import (
+    LINK_COLUMNS,
     REASON_UNDATED,
     UNATTRIBUTED,
+    add_record_links,
     classify_pubtracker_rows,
     exclusion_reasons,
     facility_map,
@@ -15,6 +17,7 @@ from processors.pubtracker_compliance import (
     matched_records_table,
     not_in_pubtracker_by_facility,
     quarter_rates,
+    record_links,
     records_by_facility,
 )
 
@@ -182,6 +185,42 @@ class DimensionsToPubTrackerTests(unittest.TestCase):
         self.assertEqual(len(self.results), self.stats["in_scope"])
         self.assertEqual(len(self.results), int(found.sum()) + int((~found).sum()))
         self.assertEqual((int(found.sum()), int((~found).sum())), (1, 1))
+
+
+class RecordLinkTests(unittest.TestCase):
+    FULL = {
+        "Publication ID": "pub.1", "DOI Link": "https://doi.org/10.1/x", "PubMed Link": "https://pubmed.ncbi.nlm.nih.gov/9/",
+        "PMCID": "PMC123", "Source Linkout": "https://journal.example/x",
+        "Dimensions for Veterans Affairs URL": "https://va.dimensions.ai/details/publication/pub.1",
+    }
+
+    def test_all_links_present(self):
+        links = record_links(self.FULL)
+        self.assertEqual(list(links), LINK_COLUMNS)
+        self.assertEqual(links["PMC Link"], "https://pmc.ncbi.nlm.nih.gov/articles/PMC123/")
+        self.assertEqual(links["Source Link"], "https://journal.example/x")
+
+    def test_missing_links_are_blank_and_dimensions_falls_back_to_id(self):
+        links = record_links({"Publication ID": "pub.2", "PMCID": float("nan"), "DOI Link": ""})
+        self.assertEqual(links["DOI Link"], "")
+        self.assertEqual(links["PMC Link"], "")
+        self.assertEqual(links["Source Link"], "")
+        self.assertEqual(links["Dimensions Link"], "https://va.dimensions.ai/details/publication/pub.2")
+
+    def test_add_record_links_keeps_row_order_and_replaces_old_link_columns(self):
+        publications = pd.DataFrame([self.FULL, {"Publication ID": "pub.3"}])
+        frame = pd.DataFrame({"Publication ID": ["pub.3", "pub.1"], "DOI Link": ["stale", "stale"]})
+        result = add_record_links(frame, publications)
+        self.assertEqual(result["Publication ID"].tolist(), ["pub.3", "pub.1"])
+        self.assertEqual(result["DOI Link"].tolist(), ["", "https://doi.org/10.1/x"])
+        self.assertEqual(list(result.columns), ["Publication ID", *LINK_COLUMNS])
+
+    def test_facility_records_include_link_columns(self):
+        scoped = pubs([{**self.FULL, "Title": "T", "Canonical Date": "2026-02-01"}])
+        results = pd.DataFrame({"Publication ID": ["pub.1"], "Match Type": ["Missing"]})
+        listing = records_by_facility(results, scoped, {})
+        self.assertTrue(set(LINK_COLUMNS) <= set(listing.columns))
+        self.assertEqual(listing["PMC Link"].iloc[0], "https://pmc.ncbi.nlm.nih.gov/articles/PMC123/")
 
 
 class NotInPubTrackerByFacilityTests(unittest.TestCase):

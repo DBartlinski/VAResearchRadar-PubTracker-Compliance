@@ -30,6 +30,7 @@ from processors.pubtracker_compliance import (
     load_pubtracker_files,
     match_to_pubtracker,
     quarter_options,
+    record_links,
 )
 
 PUBTRACKER_GAP_PATHS = [
@@ -58,6 +59,8 @@ PUBLICATION_COLUMNS = {
     "DOI Link": "doiLink",
     "PubMed Link": "pubmedLink",
     "Dimensions for Veterans Affairs URL": "dimensionsLink",
+    "PMC Link": "pmcLink",
+    "Source Link": "sourceLink",
     "Matched Facilities": "facilities",
     "Facility Match Count": "facilityMatchCount",
     "Facility Match Status": "facilityMatchStatus",
@@ -252,6 +255,11 @@ def _text(value) -> str:
     return value if isinstance(value, str) else ""
 
 
+def _with_extra_links(publications: pd.DataFrame) -> pd.DataFrame:
+    links = pd.DataFrame([record_links(row) for row in publications.to_dict("records")], index=publications.index)
+    return publications.assign(**{"PMC Link": links["PMC Link"], "Source Link": links["Source Link"]})
+
+
 def build_not_in_pubtracker_payload(publications: pd.DataFrame, facility_matches: pd.DataFrame) -> dict | None:
     """Build 02 data: eligible FY26 Dimensions records, found/not found at the fixed 90% threshold, with funding codes.
 
@@ -271,6 +279,7 @@ def build_not_in_pubtracker_payload(publications: pd.DataFrame, facility_matches
     records = []
     for row in scoped.sort_values("Canonical Date", ascending=False).to_dict("records"):
         pub_id = row["Publication ID"]
+        links = record_links(row)
         records.append([
             pub_id,
             row["Canonical Date"].strftime("%Y-%m-%d"),
@@ -286,6 +295,8 @@ def build_not_in_pubtracker_payload(publications: pd.DataFrame, facility_matches
             _text(row.get("ORD Broad Portfolios")),
             _text(row.get("Funder")),
             _text(row.get("Supporting Grants")),
+            links["PMC Link"].removeprefix("https://pmc.ncbi.nlm.nih.gov/articles/").strip("/"),
+            links["Source Link"],
         ])
     periods = {
         label: {"start": start.strftime("%Y-%m-%d"), "end": end.strftime("%Y-%m-%d")}
@@ -297,7 +308,7 @@ def build_not_in_pubtracker_payload(publications: pd.DataFrame, facility_matches
         "periods": periods,
         "facilities": facility_names,
         # [id, date, fiscalPeriod, title, journal, doi, pmid, facilityIdx[], inPubTracker, ordFunded,
-        #  vaGrantCodes, ordPortfolio, funders, grantNumbers]
+        #  vaGrantCodes, ordPortfolio, funders, grantNumbers, pmcid, sourceLink]
         "records": records,
     }
 
@@ -309,7 +320,7 @@ def main() -> None:
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    publications = _clean_records(dataset.publications, PUBLICATION_COLUMNS)
+    publications = _clean_records(_with_extra_links(dataset.publications), PUBLICATION_COLUMNS)
     matches = _clean_records(dataset.facility_matches, MATCH_COLUMNS)
 
     pub_path = OUTPUT_DIR / "publications.json"
