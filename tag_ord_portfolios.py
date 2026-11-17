@@ -14,7 +14,7 @@ from processors.ord_portfolio import (
     tag_publications,
 )
 
-SOURCE_CSV = project_root / "output/dimensions_va_2025_2026/dimensions_va_2025_2026_filtered_2025-10-01_to_2026-09-30.csv"
+SOURCE_CSV = project_root / "data/varr_baseline_FY26.csv"
 OUTPUT_CSV = project_root / "output/dimensions_va_2025_2026/dimensions_va_2025_2026_ord_tagged.csv"
 
 

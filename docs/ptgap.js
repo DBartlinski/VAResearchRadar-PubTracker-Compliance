@@ -43,15 +43,15 @@
     const card = (label, value) => `<div class="col-6 col-md"><div class="card text-center h-100"><div class="card-body py-2">
       <div class="small text-muted">${label}</div><div class="fs-4 fw-semibold">${value}</div></div></div></div>`;
     $('ptgapMetrics').innerHTML = [
-      card('Dimensions records', records.length.toLocaleString()),
+      card('VARR records', records.length.toLocaleString()),
       card('Found in PubTracker', found.length.toLocaleString()),
       card('Exact / fuzzy', `${exact.toLocaleString()} / ${(found.length - exact).toLocaleString()}`),
       card('Missing from PubTracker', (records.length - found.length).toLocaleString()),
       card('Overall submission rate', `${rate}%`),
     ].join('');
     $('ptgapNote').textContent =
-      `All ${payload.pubtrackerRows.toLocaleString()} PubTracker publication submissions are compared with the Dimensions records ` +
-      `dated ${period.start} to ${period.end}. The Dimensions publication date decides the period.`;
+      `All ${payload.pubtrackerRows.toLocaleString()} PubTracker publication submissions are compared with the VARR records ` +
+      `dated ${period.start} to ${period.end}. The VARR publication date decides the period.`;
 
     const stats = new Map();
     records.forEach(r => {
@@ -81,14 +81,14 @@
     return [
       r[REC.DOI] ? ['DOI', `https://doi.org/${r[REC.DOI]}`] : null,
       r[REC.PMID] ? ['PubMed', `https://pubmed.ncbi.nlm.nih.gov/${r[REC.PMID]}/`] : null,
-      ['Dimensions', `https://va.dimensions.ai/details/publication/${r[REC.ID]}`],
+      /^pub\./.test(r[REC.ID]) ? ['Dimensions', `https://va.dimensions.ai/details/publication/${r[REC.ID]}`] : null,
     ].filter(Boolean);
   }
 
   function showDetail(facility, scroll = true) {
     selectedFacility = facility.facility;
     $('ptgapDetailTitle').textContent =
-      `${facility.facility}: ${facility.missing.length.toLocaleString()} Dimensions records not found in PubTracker`;
+      `${facility.facility}: ${facility.missing.length.toLocaleString()} VARR records not found in PubTracker`;
     $('ptgapDetailBody').innerHTML = facility.missing.map(r => {
       const links = recordLinks(r).map(([name, url]) => `<a href="${esc(url)}" target="_blank" rel="noopener">${name}</a>`).join(' &middot; ');
       return `<tr><td>${esc(r[REC.TITLE])}</td><td>${esc(r[REC.DATE])}</td><td>${esc(r[REC.JOURNAL])}</td><td>${links}</td></tr>`;
@@ -118,7 +118,7 @@
     $('ptgapPeriod').addEventListener('change', render);
     slider.addEventListener('input', render);
     $('btnDownloadPtgapCsv').addEventListener('click', () => download(
-      [['Facility', 'Dimensions records', 'In PubTracker', 'Missing', 'Submission rate %'],
+      [['Facility', 'VARR records', 'In PubTracker', 'Missing', 'Submission rate %'],
         ...facilityRows.map(f => [f.facility, f.total, f.found, f.missing.length, f.rate.toFixed(1)])],
       'dimensions_pubtracker_facility_rates.csv'));
     $('btnDownloadPtgapMissingCsv').addEventListener('click', () => {

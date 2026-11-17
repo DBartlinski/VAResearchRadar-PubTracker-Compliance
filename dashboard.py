@@ -30,7 +30,7 @@ from processors.pubtracker_compliance import (
 )
 
 
-DATA_PATH = Path("output/dimensions_va_2025_2026/dimensions_va_2025_2026_filtered_2025-10-01_to_2026-09-30.csv")
+DATA_PATH = Path("data/varr_baseline_FY26.csv")
 PUBTRACKER_PATHS = [
     Path("PubTracker Export/submissionlist20261005132200-2025.xlsx"),
     Path("PubTracker Export/submissionlist20261005132200-2026.xlsx"),

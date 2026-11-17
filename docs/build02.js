@@ -1,7 +1,7 @@
 'use strict';
 
-// Build 02: Dimensions publications not in PubTracker. Data from data/not_in_pubtracker.json
-// (build_static_dashboard_data.py), matched at a fixed 90% title threshold; Dimensions fields only.
+// Build 02: VARR publications not in PubTracker. Data from data/not_in_pubtracker.json
+// (build_static_dashboard_data.py), matched at a fixed 90% title threshold; VARR fields only.
 (function () {
   const R = { ID: 0, DATE: 1, FP: 2, TITLE: 3, JOURNAL: 4, DOI: 5, PMID: 6, FACS: 7, FOUND: 8, ORD: 9, CODES: 10, PORTFOLIO: 11, FUNDERS: 12, GRANTS: 13, PMC: 14, SOURCE: 15 };
   const MAX_ROWS = 500;
@@ -37,7 +37,7 @@
       r[R.PMID] ? ['PubMed', `https://pubmed.ncbi.nlm.nih.gov/${r[R.PMID]}/`] : null,
       r[R.PMC] ? ['PMC', `https://pmc.ncbi.nlm.nih.gov/articles/${r[R.PMC]}/`] : null,
       r[R.SOURCE] ? ['Source', r[R.SOURCE]] : null,
-      ['Dimensions', `https://va.dimensions.ai/details/publication/${r[R.ID]}`],
+      /^pub\./.test(r[R.ID]) ? ['Dimensions', `https://va.dimensions.ai/details/publication/${r[R.ID]}`] : null,
     ].filter(Boolean);
   }
 
@@ -53,7 +53,7 @@
     const card = (label, value) => `<div class="col-6 col-md"><div class="card text-center h-100"><div class="card-body py-2">
       <div class="small text-muted">${label}</div><div class="fs-4 fw-semibold">${value}</div></div></div></div>`;
     $('b02Metrics').innerHTML = [
-      card(`Dimensions publications (${esc($('b02Period').value)})`, records.length.toLocaleString()),
+      card(`VARR publications (${esc($('b02Period').value)})`, records.length.toLocaleString()),
       card('Entered in PubTracker', entered.toLocaleString()),
       card('Not in PubTracker', (records.length - entered).toLocaleString()),
       card('Compliance %', `${rate}%`),
@@ -119,7 +119,7 @@
     const ordCount = new Set(listRows.filter(x => x.r[R.ORD]).map(x => x.r[R.ID])).size;
     const unique = new Set(listRows.map(x => x.r[R.ID])).size;
     $('b02ListNote').textContent = `${unique.toLocaleString()} publications (${listRows.length.toLocaleString()} facility rows); ` +
-      `${ordCount.toLocaleString()} with VA/ORD grant evidence. Newest Dimensions publication date first.` +
+      `${ordCount.toLocaleString()} with VA/ORD grant evidence. Newest VARR publication date first.` +
       (listRows.length > MAX_ROWS ? ` Showing the first ${MAX_ROWS}; the download includes all rows.` : '');
 
     $('b02ListBody').innerHTML = listRows.slice(0, MAX_ROWS).map(({ r, facility }, i) => `<tr data-idx="${i}" style="cursor:pointer">
@@ -135,7 +135,7 @@
       tr.insertAdjacentHTML('afterend', `<tr class="b02-detail table-light"><td colspan="9" class="small">
         <div class="row">
           <div class="col-md-6">
-            <div><strong>Dimensions date:</strong> ${esc(r[R.DATE])} (${esc(r[R.FP])})</div>
+            <div><strong>VARR date:</strong> ${esc(r[R.DATE])} (${esc(r[R.FP])})</div>
             <div><strong>Journal:</strong> ${esc(r[R.JOURNAL]) || '-'}</div>
             <div><strong>All facilities:</strong> ${esc(facilityNames(r).join('; '))}</div>
             <div><strong>In PubTracker:</strong> ${r[R.FOUND] ? 'Yes (title match)' : 'No'}</div>
@@ -182,11 +182,11 @@
       renderList(periodRecords());
     }));
     $('b02DownloadFacilities').addEventListener('click', () => download(
-      [['Facility', 'Not in PubTracker', 'Entered in PubTracker', 'Dimensions publications', 'Compliance %'],
+      [['Facility', 'Not in PubTracker', 'Entered in PubTracker', 'VARR publications', 'Compliance %'],
         ...facilityRows.map(f => [f.facility, f.missing, f.entered, f.total, f.rate.toFixed(1)])],
       'pubtracker_compliance_by_facility.csv'));
     $('b02DownloadList').addEventListener('click', () => download(
-      [['Dimensions Date', 'Fiscal Period', 'Facility', 'Title', 'Journal', 'In PubTracker', 'ORD Funded', 'VA Grant Codes',
+      [['VARR Date', 'Fiscal Period', 'Facility', 'Title', 'Journal', 'In PubTracker', 'ORD Funded', 'VA Grant Codes',
         'ORD Portfolio', 'Funders', 'Grant Numbers', 'DOI Link', 'PubMed Link', 'PMC Link', 'Source Link', 'Dimensions Link',
         'DOI', 'PMID', 'Publication ID'],
         ...listRows.map(({ r, facility }) => [r[R.DATE], r[R.FP], facility, r[R.TITLE], r[R.JOURNAL], r[R.FOUND] ? 'Yes' : 'No',

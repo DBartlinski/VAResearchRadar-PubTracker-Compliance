@@ -16,8 +16,7 @@ from processors.ord_portfolio import tag_publications
 
 # Default auto-loaded sources (matches the dataset used by dashboard.py / the static site)
 DEFAULT_DIMENSIONS_PATH = os.path.join(
-    os.path.dirname(__file__), 'output', 'dimensions_va_2025_2026',
-    'dimensions_va_2025_2026_filtered_2025-10-01_to_2026-09-30.csv',
+    os.path.dirname(__file__), 'data', 'varr_baseline_FY26.csv',
 )
 
 # ---------------------------------------------------------------------------

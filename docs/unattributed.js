@@ -16,7 +16,7 @@
       r[R.PMID] ? ['PubMed', `https://pubmed.ncbi.nlm.nih.gov/${r[R.PMID]}/`] : null,
       r[R.PMC] ? ['PMC', `https://pmc.ncbi.nlm.nih.gov/articles/${r[R.PMC]}/`] : null,
       r[R.SOURCE] ? ['Source', r[R.SOURCE]] : null,
-      ['Dimensions', `https://va.dimensions.ai/details/publication/${r[R.ID]}`],
+      /^pub\./.test(r[R.ID]) ? ['Dimensions', `https://va.dimensions.ai/details/publication/${r[R.ID]}`] : null,
     ].filter(Boolean);
   }
 
