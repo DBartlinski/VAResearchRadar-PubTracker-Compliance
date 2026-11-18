@@ -4,6 +4,11 @@ PubTracker Compliance-VARR uses this CSV as its baseline in place of the VA Dime
 downstream processors (facility matching, ORD tagging, compliance) run unchanged.
 
     python export_varr_baseline.py --db "<path>\\vadaily.db"
+
+Publications are placed in the fiscal year by print/issue date first, then online date, matching
+Dimensions. vadaily stores the earliest (online) date, so print dates are looked up from Crossref by DOI
+and cached in data/crossref_print_dates.json. The vadaily database must therefore cover papers that went
+online up to about nine months before the fiscal year starts.
 """
 from __future__ import annotations
 
@@ -12,18 +17,25 @@ import csv
 import json
 import re
 import sqlite3
+import time
 from pathlib import Path
 
-DEFAULT_OUT = Path(__file__).parent / "data" / "varr_baseline_FY26.csv"
+DATA = Path(__file__).parent / "data"
+DEFAULT_OUT = DATA / "varr_baseline_FY26.csv"
+PRINT_CACHE = DATA / "crossref_print_dates.json"
 FY_START, FY_END = "2025-10-01", "2026-09-30"
+CROSSREF = "https://api.crossref.org/works"
+CONTACT = "david.bartlinski@va.gov"
+DOIS_PER_REQUEST = 20
 
 COLUMNS = [
     "Publication ID", "DOI", "PMID", "PMCID", "Title", "Abstract", "Acknowledgements", "Funding",
     "Source title", "Publisher", "ISSN", "Publication date", "PubYear", "Open Access",
-    "Publication Type", "Document Type", "Authors", "Authors (Raw Affiliation)",
-    "Research Organizations - standardized", "Funder", "Grant IDs of Supporting Grants",
+    "Publication Type", "Document Type", "Authors", "Authors (Raw Affiliation)", "Authors Affiliations",
+    "Research Organizations - standardized", "MeSH terms", "Funder", "Grant IDs of Supporting Grants",
     "Supporting Grants", "Times cited", "RCR", "FCR", "Source Linkout",
-    "Dimensions for Veterans Affairs URL", "Fields of Research (ANZSRC 2020)", "VARR Sources",
+    "Dimensions for Veterans Affairs URL", "Fields of Research (ANZSRC 2020)", "Broad Research Areas",
+    "Health Research Areas", "RCDC Categories", "VARR Sources",
 ]
 
 # vadaily pub_type -> Dimensions "Publication Type"; None drops records that are not publications.
@@ -36,6 +48,20 @@ PUBLICATION_TYPE = {
 }
 VA_SEGMENT = re.compile(r"veterans|\bVA\b|\bVAMC\b|\bVHA\b", re.I)
 
+# OpenAlex/ROR spellings of VA facilities -> the Dimensions name used in vamc_reference.csv search terms.
+# The canonical name is appended (the original is kept) so facility matching finds the station.
+ORG_ALIASES = [
+    (re.compile(r"salt lake city healthcare system", re.I), "VA Salt Lake City Health care System"),
+    (re.compile(r"south texas veterans health ?care system", re.I), "VA South Texas Health Care System"),
+    (re.compile(r"northeast ohio health ?care system", re.I), "Louis Stokes Cleveland VA Medical Center"),
+    (re.compile(r"\bdallas va medical center", re.I), "VA North Texas Health Care System"),
+    (re.compile(r"(?<!salt )\blake city va medical center", re.I), "North Florida/South Georgia Veterans Health System"),
+    (re.compile(r"crescenz (va|veterans affairs) medical center", re.I), "Philadelphia VA Medical Center"),
+    (re.compile(r"doris miller (department of veterans affairs|va) medical center", re.I), "Doris Miller VA Medical Center"),
+    (re.compile(r"\bva center for clinical management research", re.I), "VA Ann Arbor Healthcare System"),
+    (re.compile(r"\bva indianapolis\b", re.I), "Richard L. Roudebush VA Medical Center"),
+]
+
 
 def document_type(pub_type: str) -> str:
     if pub_type == "Conference-Abstract":
@@ -46,59 +72,139 @@ def document_type(pub_type: str) -> str:
 
 
 def organizations(record: dict) -> str:
-    """Standardized orgs, or the VA-looking raw affiliation segments when a record has none."""
-    orgs = (record.get("research_orgs") or "").strip()
-    if orgs:
-        return orgs
-    segments = [s.strip() for s in (record.get("affiliations") or "").split(";")]
-    return "; ".join(s for s in segments if s and VA_SEGMENT.search(s))
+    """Standardized orgs (or VA-looking raw affiliation segments when none), plus Dimensions-name aliases."""
+    orgs = [s.strip() for s in (record.get("research_orgs") or "").split(";") if s.strip()]
+    if not orgs:
+        segments = [s.strip() for s in (record.get("affiliations") or "").split(";")]
+        orgs = [s for s in segments if s and VA_SEGMENT.search(s)]
+    for pattern, canonical in ORG_ALIASES:
+        if canonical not in orgs and any(pattern.search(o) for o in orgs):
+            orgs.append(canonical)
+    return "; ".join(orgs)
 
 
-def rows(db: Path):
+def funding(record: dict) -> str:
+    """Funding statement, or funder names plus award numbers so ORD prefix/service detection still works."""
+    if (record.get("funding_text") or "").strip():
+        return record["funding_text"]
+    return "; ".join(p for p in (record.get("funder"), record.get("grant_ids")) if p)
+
+
+def load_records(db: Path) -> list[dict]:
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
-        for (raw,) in con.execute("SELECT record FROM publications"):
-            r = json.loads(raw)
-            pub_type = r.get("pub_type") or ""
-            mapped = PUBLICATION_TYPE.get(pub_type, "article")
-            date = r.get("pub_date") or ""
-            if mapped is None or not FY_START <= date <= FY_END:
-                continue
-            if not ({"pubmed", "openalex", "crossref"} & set(r.get("sources") or [])):
-                continue
-            yield {
-                "Publication ID": r.get("dimensions_id") or r.get("key"),
-                "DOI": r.get("doi"), "PMID": r.get("pmid"), "PMCID": r.get("pmcid"),
-                "Title": r.get("title"), "Abstract": r.get("abstract"),
-                "Acknowledgements": r.get("acknowledgements"), "Funding": r.get("funding_text"),
-                "Source title": r.get("journal"), "Publisher": r.get("publisher"), "ISSN": r.get("issn"),
-                "Publication date": date, "PubYear": date[:4], "Open Access": r.get("open_access"),
-                "Publication Type": mapped, "Document Type": document_type(pub_type),
-                "Authors": r.get("authors"), "Authors (Raw Affiliation)": r.get("affiliations"),
-                "Research Organizations - standardized": organizations(r),
-                "Funder": r.get("funder"), "Grant IDs of Supporting Grants": r.get("grant_ids"),
-                "Supporting Grants": r.get("grant_ids"), "Times cited": r.get("times_cited"),
-                "RCR": r.get("rcr"), "FCR": r.get("fcr"), "Source Linkout": r.get("source_linkout"),
-                "Dimensions for Veterans Affairs URL": r.get("dimensions_url"),
-                "Fields of Research (ANZSRC 2020)": r.get("fields_of_research"),
-                "VARR Sources": ", ".join(r.get("sources") or []),
-            }
+        return [json.loads(raw) for (raw,) in con.execute("SELECT record FROM publications")]
     finally:
         con.close()
+
+
+def _date_parts(value: dict | None) -> str:
+    parts = ((value or {}).get("date-parts") or [[None]])[0]
+    if not parts or not parts[0]:
+        return ""
+    y, m, d = (list(parts) + [1, 1])[:3]
+    return f"{int(y):04d}-{int(m or 1):02d}-{int(d or 1):02d}"
+
+
+def lookup_print_dates(dois: set[str], cache_path: Path = PRINT_CACHE) -> dict[str, str]:
+    """DOI -> Crossref print date (YYYY-MM-DD, "" when Crossref has none). Cached; only new DOIs are fetched."""
+    cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
+    todo = sorted(d for d in dois if d not in cache)
+    if todo:
+        import requests
+        try:
+            import truststore  # VA network inspects TLS; trust the OS certificate store.
+            truststore.inject_into_ssl()
+        except ImportError:
+            pass
+        session = requests.Session()
+        session.headers["User-Agent"] = f"PubTrackerCompliance-VARR/1.0 (mailto:{CONTACT})"
+        print(f"Looking up Crossref print dates for {len(todo)} DOIs...")
+        for i in range(0, len(todo), DOIS_PER_REQUEST):
+            batch = todo[i:i + DOIS_PER_REQUEST]
+            params = {"filter": ",".join(f"doi:{d}" for d in batch), "rows": DOIS_PER_REQUEST * 2,
+                      "select": "DOI,published-print"}
+            for attempt in range(6):
+                try:
+                    resp = session.get(CROSSREF, params=params, timeout=60)
+                except requests.RequestException:
+                    resp = None
+                if resp is not None and resp.status_code == 200:
+                    break
+                time.sleep(2 ** attempt)
+            else:
+                print(f"  giving up on batch at {i} (left uncached; re-run to retry)")
+                continue
+            found = {it["DOI"].lower(): _date_parts(it.get("published-print"))
+                     for it in resp.json()["message"]["items"]}
+            for d in batch:
+                cache[d] = found.get(d, "")
+            if (i // DOIS_PER_REQUEST) % 50 == 0:
+                print(f"  {i + len(batch)}/{len(todo)}")
+                cache_path.write_text(json.dumps(cache, sort_keys=True), encoding="utf-8")
+            time.sleep(0.3)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(cache, sort_keys=True), encoding="utf-8")
+    return cache
+
+
+def fiscal_date(record: dict, print_dates: dict[str, str]) -> str:
+    """Print/issue date first, then the record's own (earliest/online) date, as Dimensions does."""
+    return print_dates.get((record.get("doi") or "").lower()) or record.get("pub_date") or ""
+
+
+def rows(records: list[dict], print_dates: dict[str, str]):
+    for r in records:
+        pub_type = r.get("pub_type") or ""
+        mapped = PUBLICATION_TYPE.get(pub_type, "article")
+        date = fiscal_date(r, print_dates)
+        if mapped is None or not FY_START <= date <= FY_END:
+            continue
+        if not ({"pubmed", "openalex", "crossref"} & set(r.get("sources") or [])):
+            continue
+        yield {
+            "Publication ID": r.get("dimensions_id") or r.get("key"),
+            "DOI": r.get("doi"), "PMID": r.get("pmid"), "PMCID": r.get("pmcid"),
+            "Title": r.get("title"), "Abstract": r.get("abstract"),
+            "Acknowledgements": r.get("acknowledgements"), "Funding": funding(r),
+            "Source title": r.get("journal"), "Publisher": r.get("publisher"), "ISSN": r.get("issn"),
+            "Publication date": date, "PubYear": date[:4], "Open Access": r.get("open_access"),
+            "Publication Type": mapped, "Document Type": document_type(pub_type),
+            "Authors": r.get("authors"), "Authors (Raw Affiliation)": r.get("affiliations"),
+            "Authors Affiliations": r.get("affiliations"),
+            "Research Organizations - standardized": organizations(r), "MeSH terms": r.get("mesh_terms"),
+            "Funder": r.get("funder"), "Grant IDs of Supporting Grants": r.get("grant_ids"),
+            "Supporting Grants": r.get("grant_ids"), "Times cited": r.get("times_cited"),
+            "RCR": r.get("rcr"), "FCR": r.get("fcr"), "Source Linkout": r.get("source_linkout"),
+            "Dimensions for Veterans Affairs URL": r.get("dimensions_url"),
+            "Fields of Research (ANZSRC 2020)": r.get("fields_of_research"),
+            "Broad Research Areas": r.get("fields_of_research"),
+            "Health Research Areas": r.get("health_areas"), "RCDC Categories": r.get("rcdc"),
+            "VARR Sources": ", ".join(r.get("sources") or []),
+        }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", required=True, type=Path, help="Path to vadaily.db")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    parser.add_argument("--no-print-dates", action="store_true",
+                        help="Use vadaily's earliest (online) date only; skip the Crossref print-date lookup")
     args = parser.parse_args()
+
+    records = load_records(args.db)
+    print_dates = {}
+    if not args.no_print_dates:
+        # Print dates trail online dates, so only papers online by FY end can be printed within the FY.
+        print_dates = lookup_print_dates({r["doi"].lower() for r in records
+                                          if r.get("doi") and (r.get("pub_date") or "") <= FY_END})
 
     seen, written = set(), 0
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with open(args.out, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=COLUMNS)
         writer.writeheader()
-        for row in rows(args.db):
+        for row in rows(records, print_dates):
             if row["Publication ID"] in seen:
                 continue
             seen.add(row["Publication ID"])
