@@ -170,7 +170,10 @@ SEASONS = {"winter": 1, "spring": 4, "summer": 7, "fall": 10, "autumn": 10}
 
 
 def _issue_date(pub_date) -> str:
-    """PubMed journal-issue PubDate element -> YYYY-MM-DD (month or season starts, day defaults to 1)."""
+    """PubMed journal-issue PubDate element -> YYYY-MM-DD (month or season starts, day defaults to 1).
+
+    Year-only dates (continuous-publication journals) are not issue dates, so they return "".
+    """
     year = pub_date.findtext("Year")
     month = (pub_date.findtext("Month") or "").strip().lower()
     if not year:
@@ -178,7 +181,9 @@ def _issue_date(pub_date) -> str:
         if not match:
             return ""
         year, month = match.group(1), (match.group(2) or "").lower()
-    number = int(month) if month.isdigit() else MONTHS.get(month[:3]) or SEASONS.get(month) or 1
+    number = int(month) if month.isdigit() else MONTHS.get(month[:3]) or SEASONS.get(month)
+    if not number:
+        return ""
     day = pub_date.findtext("Day")
     return f"{int(year):04d}-{number:02d}-{int(day) if day and day.isdigit() else 1:02d}"
 
