@@ -38,7 +38,7 @@ COLUMNS = [
     "Research Organizations - standardized", "MeSH terms", "Funder", "Grant IDs of Supporting Grants",
     "Supporting Grants", "Times cited", "RCR", "FCR", "Source Linkout",
     "Dimensions for Veterans Affairs URL", "Fields of Research (ANZSRC 2020)", "Broad Research Areas",
-    "Health Research Areas", "RCDC Categories", "VARR Sources",
+    "Health Research Areas", "RCDC Categories", "VARR Sources", "VA Evidence",
 ]
 
 # vadaily pub_type -> Dimensions "Publication Type"; None drops records that are not publications.
@@ -64,6 +64,24 @@ ORG_ALIASES = [
     (re.compile(r"\bva center for clinical management research", re.I), "VA Ann Arbor Healthcare System"),
     (re.compile(r"\bva indianapolis\b", re.I), "Richard L. Roudebush VA Medical Center"),
 ]
+
+
+# Raw-affiliation phrases that name the VA itself; a bare "VA" is excluded because it also matches Virginia.
+VA_AFFILIATION = re.compile(
+    r"veterans?[ ’']*(affairs|health|administration|hospital|medical|healthcare|integrated)"
+    r"|\bVAMC\b|\bVHA\b|national center for ptsd"
+    r"|\bVA\s+(medical|health|healthcare|hospital|[A-Z][\w.-]*\s+(healthcare|health care|medical|health system))",
+    re.I)
+EVIDENCE_RANK = {"weak": 0, "medium": 1, "strong": 2}
+
+
+def va_evidence(record: dict) -> str:
+    """strong: standardized VA organization or VA funding; medium: VA named in raw affiliations; else weak."""
+    if VA_SEGMENT.search(record.get("research_orgs") or "") or record.get("va_funded") or record.get("ord_funded"):
+        return "strong"
+    if VA_AFFILIATION.search(record.get("affiliations") or ""):
+        return "medium"
+    return "weak"
 
 
 def document_type(pub_type: str) -> str:
@@ -257,6 +275,7 @@ def rows(records: list[dict], print_dates: dict[str, str]):
             "Broad Research Areas": r.get("fields_of_research"),
             "Health Research Areas": r.get("health_areas"), "RCDC Categories": r.get("rcdc"),
             "VARR Sources": ", ".join(r.get("sources") or []),
+            "VA Evidence": va_evidence(r),
         }
 
 
@@ -266,6 +285,8 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--no-print-dates", action="store_true",
                         help="Use vadaily's earliest (online) date only; skip the Crossref print-date lookup")
+    parser.add_argument("--min-evidence", choices=list(EVIDENCE_RANK), default="medium",
+                        help="Lowest VA-evidence level kept (default medium); dropped rows go to the audit CSV")
     args = parser.parse_args()
 
     records = load_records(args.db)
@@ -280,18 +301,30 @@ def main() -> None:
         issue_dates = lookup_pubmed_issue_dates(no_print)
         print_dates.update({f"pmid:{p}": d for p, d in issue_dates.items() if d})
 
-    seen, written = set(), 0
+    seen, written, dropped = set(), 0, 0
+    floor = EVIDENCE_RANK[args.min_evidence]
+    audit_path = args.out.with_name(f"{args.out.stem}_below_evidence.csv")
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.out, "w", encoding="utf-8", newline="") as f:
+    with open(args.out, "w", encoding="utf-8", newline="") as f, \
+            open(audit_path, "w", encoding="utf-8", newline="") as audit:
         writer = csv.DictWriter(f, fieldnames=COLUMNS)
+        audit_writer = csv.DictWriter(audit, fieldnames=["DOI", "Title", "Source title", "Publication date",
+                                                         "Authors (Raw Affiliation)", "VARR Sources", "VA Evidence"],
+                                      extrasaction="ignore")
         writer.writeheader()
+        audit_writer.writeheader()
         for row in rows(records, print_dates):
             if row["Publication ID"] in seen:
                 continue
             seen.add(row["Publication ID"])
+            if EVIDENCE_RANK[row["VA Evidence"]] < floor:
+                audit_writer.writerow(row)
+                dropped += 1
+                continue
             writer.writerow(row)
             written += 1
-    print(f"Wrote {written} publications ({FY_START} to {FY_END}) to {args.out}")
+    print(f"Wrote {written} publications ({FY_START} to {FY_END}) to {args.out}; "
+          f"{dropped} below '{args.min_evidence}' evidence listed in {audit_path.name}")
 
 
 if __name__ == "__main__":
