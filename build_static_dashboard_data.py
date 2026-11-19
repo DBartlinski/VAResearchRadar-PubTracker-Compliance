@@ -109,7 +109,8 @@ def build_compliance_payload() -> dict | None:
     Only aggregated counts are returned (no raw PubTracker titles/rows), since this
     payload is published to the public GitHub Pages site.
     """
-    pt_path = find_latest_export()
+    # Same PubTracker exports as Build 02, so every page counts the same submissions.
+    pt_path = PUBTRACKER_GAP_PATHS if all(p.exists() for p in PUBTRACKER_GAP_PATHS) else find_latest_export()
     if pt_path is None:
         return None
 
@@ -132,7 +133,8 @@ def build_compliance_payload() -> dict | None:
     # identically to every quarter, so quarter-over-quarter Dimensions counts differ.
     dim_pub_list, _ = process_dimensions_by_quarter(dim_raw)
 
-    pt_raw = pd.read_excel(pt_path, sheet_name=0)
+    pt_raw = pd.concat([pd.read_excel(p, sheet_name=0) for p in (pt_path if isinstance(pt_path, list) else [pt_path])],
+                       ignore_index=True)
     pt_counts, _ = process_pubtracker(pt_raw)
 
     vamc_ref = load_vamc_reference()
@@ -189,7 +191,8 @@ def build_compliance_payload() -> dict | None:
         }
 
     return {
-        "generatedFrom": {"dimensions": SOURCE_CSV.name, "pubtracker": pt_path.name},
+        "generatedFrom": {"dimensions": SOURCE_CSV.name,
+                          "pubtracker": ", ".join(p.name for p in (pt_path if isinstance(pt_path, list) else [pt_path]))},
         "quarters": quarter_labels,
         "vamcs": vamcs,
         "total": total,
@@ -338,7 +341,8 @@ def main() -> None:
     print(f"Wrote {pub_path} ({pub_path.stat().st_size / 1_048_576:.2f} MB)")
     print(f"Wrote {match_path} ({match_path.stat().st_size / 1_048_576:.2f} MB)")
 
-    pubtracker = load_pubtracker_submissions()
+    pubtracker = load_pubtracker_submissions(
+        PUBTRACKER_GAP_PATHS if all(p.exists() for p in PUBTRACKER_GAP_PATHS) else None)
     crossref_path = OUTPUT_DIR / "pubtracker_crossref.json"
     if pubtracker.empty:
         crossref_path.write_text("[]", encoding="utf-8")

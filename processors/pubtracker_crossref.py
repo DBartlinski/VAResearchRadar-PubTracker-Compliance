@@ -30,9 +30,10 @@ def find_latest_export(directory: Path = PUBTRACKER_EXPORT_DIR) -> Path | None:
     return files[-1] if files else None
 
 
-def load_pubtracker_submissions(path: Path | None = None) -> pd.DataFrame:
-    """Load and normalize a PubTracker submission export for title-based cross-referencing.
+def load_pubtracker_submissions(path: Path | list[Path] | None = None) -> pd.DataFrame:
+    """Load and normalize PubTracker submission export(s) for title-based cross-referencing.
 
+    `path` may be one export or several (their rows are combined).
     Returns an empty frame (safe no-op for callers) if no export file is found.
     """
     path = path or find_latest_export()
@@ -40,7 +41,8 @@ def load_pubtracker_submissions(path: Path | None = None) -> pd.DataFrame:
     if path is None:
         return pd.DataFrame(columns=columns)
 
-    raw = pd.read_excel(path, sheet_name=0)
+    paths = path if isinstance(path, (list, tuple)) else [path]
+    raw = pd.concat([pd.read_excel(p, sheet_name=0) for p in paths], ignore_index=True)
     raw = raw[raw["Submittion Type"].astype(str).str.strip().str.lower() == "publication"].copy()
     raw["_norm_title"] = raw["Title"].map(_normalize_title)
     raw = raw[raw["_norm_title"] != ""]
