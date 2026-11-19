@@ -7,7 +7,8 @@ downstream processors (facility matching, ORD tagging, compliance) run unchanged
 
 Publications are placed in the fiscal year by print/issue date first, then online date, matching
 Dimensions. vadaily stores the earliest (online) date, so print dates are looked up from Crossref by DOI
-and cached in data/crossref_print_dates.json. The vadaily database must therefore cover papers that went
+and cached in data/crossref_print_dates.json; PubMed issue dates (data/pubmed_issue_dates.json) fill in
+where Crossref has none. The vadaily database must therefore cover papers that went
 online up to about nine months before the fiscal year starts.
 """
 from __future__ import annotations
@@ -23,6 +24,8 @@ from pathlib import Path
 DATA = Path(__file__).parent / "data"
 DEFAULT_OUT = DATA / "varr_baseline_FY26.csv"
 PRINT_CACHE = DATA / "crossref_print_dates.json"
+ISSUE_CACHE = DATA / "pubmed_issue_dates.json"
+EFETCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 FY_START, FY_END = "2025-10-01", "2026-09-30"
 CROSSREF = "https://api.crossref.org/works"
 CONTACT = "david.bartlinski@va.gov"
@@ -149,8 +152,76 @@ def lookup_print_dates(dois: set[str], cache_path: Path = PRINT_CACHE) -> dict[s
 
 
 def fiscal_date(record: dict, print_dates: dict[str, str]) -> str:
-    """Print/issue date first, then the record's own (earliest/online) date, as Dimensions does."""
-    return print_dates.get((record.get("doi") or "").lower()) or record.get("pub_date") or ""
+    """Print/issue date first, then the record's own (earliest/online) date, as Dimensions does.
+
+    Print dates after the fiscal year end are ignored: Dimensions had not yet assigned those issues, so
+    it dated the paper by its online date.
+    """
+    printed = (print_dates.get((record.get("doi") or "").lower())
+               or print_dates.get(f"pmid:{record.get('pmid')}") or "")
+    if printed and printed <= FY_END:
+        return printed
+    return record.get("pub_date") or ""
+
+
+MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+SEASONS = {"winter": 1, "spring": 4, "summer": 7, "fall": 10, "autumn": 10}
+
+
+def _issue_date(pub_date) -> str:
+    """PubMed journal-issue PubDate element -> YYYY-MM-DD (month or season starts, day defaults to 1)."""
+    year = pub_date.findtext("Year")
+    month = (pub_date.findtext("Month") or "").strip().lower()
+    if not year:
+        match = re.match(r"(\d{4})\s*([A-Za-z]{3,6})?", pub_date.findtext("MedlineDate") or "")
+        if not match:
+            return ""
+        year, month = match.group(1), (match.group(2) or "").lower()
+    number = int(month) if month.isdigit() else MONTHS.get(month[:3]) or SEASONS.get(month) or 1
+    day = pub_date.findtext("Day")
+    return f"{int(year):04d}-{number:02d}-{int(day) if day and day.isdigit() else 1:02d}"
+
+
+def lookup_pubmed_issue_dates(pmids: set[str], cache_path: Path = ISSUE_CACHE) -> dict[str, str]:
+    """PMID -> PubMed journal issue date (the fallback when Crossref has no print date). Cached."""
+    cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
+    todo = sorted(p for p in pmids if p not in cache)
+    if todo:
+        import xml.etree.ElementTree as ET
+
+        import requests
+        try:
+            import truststore
+            truststore.inject_into_ssl()
+        except ImportError:
+            pass
+        session = requests.Session()
+        print(f"Looking up PubMed issue dates for {len(todo)} PMIDs...")
+        for i in range(0, len(todo), 200):
+            batch = todo[i:i + 200]
+            for attempt in range(6):
+                try:
+                    resp = session.post(EFETCH, data={"db": "pubmed", "id": ",".join(batch), "retmode": "xml",
+                                                      "tool": "varr-compliance", "email": CONTACT}, timeout=120)
+                except requests.RequestException:
+                    resp = None
+                if resp is not None and resp.status_code == 200:
+                    break
+                time.sleep(2 ** attempt)
+            else:
+                print(f"  giving up on batch at {i} (left uncached; re-run to retry)")
+                continue
+            found = {}
+            for article in ET.fromstring(resp.content).iter("PubmedArticle"):
+                pmid = article.findtext("MedlineCitation/PMID")
+                issue = article.find("MedlineCitation/Article/Journal/JournalIssue/PubDate")
+                found[pmid] = _issue_date(issue) if issue is not None else ""
+            for p in batch:
+                cache[p] = found.get(p, "")
+            time.sleep(0.4)
+        cache_path.write_text(json.dumps(cache, sort_keys=True), encoding="utf-8")
+    return cache
 
 
 def rows(records: list[dict], print_dates: dict[str, str]):
@@ -198,6 +269,11 @@ def main() -> None:
         # Print dates trail online dates, so only papers online by FY end can be printed within the FY.
         print_dates = lookup_print_dates({r["doi"].lower() for r in records
                                           if r.get("doi") and (r.get("pub_date") or "") <= FY_END})
+        # PubMed issue dates cover papers Crossref has no print date for.
+        no_print = {r["pmid"] for r in records if r.get("pmid") and (r.get("pub_date") or "") <= FY_END
+                    and not print_dates.get((r.get("doi") or "").lower())}
+        issue_dates = lookup_pubmed_issue_dates(no_print)
+        print_dates.update({f"pmid:{p}": d for p, d in issue_dates.items() if d})
 
     seen, written = set(), 0
     args.out.parent.mkdir(parents=True, exist_ok=True)
