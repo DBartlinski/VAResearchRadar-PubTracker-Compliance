@@ -84,10 +84,20 @@ def va_evidence(record: dict) -> str:
     return "weak"
 
 
-def document_type(pub_type: str) -> str:
-    if pub_type == "Conference-Abstract":
+ABSTRACT_DOI = re.compile(
+    r"^10\.1093/geroni/igaf\d+\.\d+$"          # Innovation in Aging meeting abstracts
+    r"|^10\.1681/asn\.\d{4}[0-9a-z]{8}$"       # JASN meeting abstracts
+    r"|^10\.1002/alz\d{5}_\d+$"                # Alzheimer's & Dementia meeting abstracts
+    r"|^10\.1093/ajrccm/aamag\d+\.\d+$|meetingabstracts"
+    r"|_suppl\.|^10\.1152/physiol\.\d{4}\.\d+\.s\d\.\d+$", re.I)
+ERRATUM_TITLE = re.compile(
+    r"^\s*(author |publisher |editorial |addendum and )?(correction|corrigendum|erratum|errata)\b", re.I)
+
+
+def document_type(pub_type: str, doi: str = "", title: str = "") -> str:
+    if pub_type == "Conference-Abstract" or ABSTRACT_DOI.search(doi or ""):
         return "Conference Abstract"
-    if pub_type == "Erratum":
+    if pub_type == "Erratum" or ERRATUM_TITLE.search(title or "") or (title or "").lower().startswith("corrigendum to"):
         return "Correction Erratum"
     return "Article"
 
@@ -263,7 +273,7 @@ def rows(records: list[dict], print_dates: dict[str, str]):
             "Acknowledgements": r.get("acknowledgements"), "Funding": funding(r),
             "Source title": r.get("journal"), "Publisher": r.get("publisher"), "ISSN": r.get("issn"),
             "Publication date": date, "PubYear": date[:4], "Open Access": r.get("open_access"),
-            "Publication Type": mapped, "Document Type": document_type(pub_type),
+            "Publication Type": mapped, "Document Type": document_type(pub_type, r.get("doi") or "", r.get("title") or ""),
             "Authors": r.get("authors"), "Authors (Raw Affiliation)": r.get("affiliations"),
             "Authors Affiliations": r.get("affiliations"),
             "Research Organizations - standardized": organizations(r), "MeSH terms": r.get("mesh_terms"),
