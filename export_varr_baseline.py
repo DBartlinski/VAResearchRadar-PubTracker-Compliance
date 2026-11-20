@@ -19,6 +19,7 @@ import json
 import re
 import sqlite3
 import time
+from functools import lru_cache
 from pathlib import Path
 
 DATA = Path(__file__).parent / "data"
@@ -102,12 +103,61 @@ def document_type(pub_type: str, doi: str = "", title: str = "") -> str:
     return "Article"
 
 
+MAX_VA_FACILITIES = 2
+VA_CENTRAL_OFFICE_STATION = "101"
+
+
+@lru_cache(maxsize=1)
+def _facility_terms() -> list[tuple[str, list[str]]]:
+    from processors.compliance_calculator import get_search_terms, load_vamc_reference
+    ref = load_vamc_reference()
+    return [(str(station).strip(), [t.lower() for t in get_search_terms(display)])
+            for display, station in zip(ref["vamc_display"], ref["station_no"])]
+
+
+def facility_station(org: str) -> str | None:
+    """Station number of the first reference facility whose search term appears in `org`."""
+    low = org.lower()
+    for station, terms in _facility_terms():
+        if any(t in low for t in terms):
+            return station
+    return None
+
+
+def canonical_org(org: str) -> str:
+    for pattern, canonical in ORG_ALIASES:
+        if pattern.search(org):
+            return canonical
+    return org
+
+
+def limit_va_facilities(orgs: list[str]) -> list[str]:
+    """Keep non-VA organizations plus only the first two distinct VA facilities in listed order.
+
+    VA Central Office / umbrella names are not facilities, so they do not use up a slot.
+    """
+    kept, facilities = [], []
+    for org in orgs:
+        station = facility_station(canonical_org(org))
+        if station == VA_CENTRAL_OFFICE_STATION or not (station or VA_SEGMENT.search(org)):
+            kept.append(org)
+            continue
+        key = station or org.lower()
+        if key not in facilities and len(facilities) < MAX_VA_FACILITIES:
+            facilities.append(key)
+        if key in facilities:
+            kept.append(org)
+    return kept
+
+
 def organizations(record: dict) -> str:
-    """Standardized orgs (or VA-looking raw affiliation segments when none), plus Dimensions-name aliases."""
+    """Standardized orgs (or VA-looking raw affiliation segments when none), capped at the first two VA
+    facilities, plus Dimensions-name aliases."""
     orgs = [s.strip() for s in (record.get("research_orgs") or "").split(";") if s.strip()]
     if not orgs:
         segments = [s.strip() for s in (record.get("affiliations") or "").split(";")]
         orgs = [s for s in segments if s and VA_SEGMENT.search(s)]
+    orgs = limit_va_facilities(orgs)
     for pattern, canonical in ORG_ALIASES:
         if canonical not in orgs and any(pattern.search(o) for o in orgs):
             orgs.append(canonical)
