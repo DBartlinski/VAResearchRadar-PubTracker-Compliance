@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from processors.pubtracker_processor import process_pubtracker, get_quarter_label
 from processors.dimensions_processor import read_dimensions_df, process_dimensions_by_quarter
 from processors.compliance_calculator import calculate_compliance, load_vamc_reference
-from processors.pubtracker_crossref import find_latest_export, load_pubtracker_submissions, _normalize_title
+from processors.pubtracker_crossref import find_export_set, find_latest_export, load_pubtracker_submissions, read_export, _normalize_title
 from processors.ord_portfolio import tag_publications
 
 # Default auto-loaded sources (matches the dataset used by dashboard.py / the static site)
@@ -140,7 +140,7 @@ if st.button('Generate Compliance Report', type='primary', width='stretch'):
             if use_custom_pt:
                 pt_raw = pd.read_csv(pubtracker_file)
             else:
-                pt_raw = pd.read_excel(auto_pt_path, sheet_name=0)
+                pt_raw = read_export(auto_pt_path)
             pt_counts, pt_info = process_pubtracker(pt_raw, include_presentations=include_presentations)
         except Exception as exc:
             errors.append(f'PubTracker processing error: {exc}')

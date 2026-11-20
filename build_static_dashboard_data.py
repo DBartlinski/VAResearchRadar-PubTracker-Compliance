@@ -17,7 +17,9 @@ project_root = Path.cwd()
 sys.path.insert(0, str(project_root))
 
 from processors.dashboard_data import load_dashboard_dataset, split_values
-from processors.pubtracker_crossref import load_pubtracker_submissions, find_latest_export, _normalize_title
+from processors.pubtracker_crossref import (
+    find_export_set, load_pubtracker_submissions, read_export, _normalize_title,
+)
 from processors.pubtracker_processor import process_pubtracker, get_quarter_label
 from processors.dimensions_processor import process_dimensions_by_quarter
 from processors.compliance_calculator import calculate_compliance, load_vamc_reference
@@ -33,10 +35,8 @@ from processors.pubtracker_compliance import (
     record_links,
 )
 
-PUBTRACKER_GAP_PATHS = [
-    project_root / "PubTracker Export/submissionlist20261005132200-2025.xlsx",
-    project_root / "PubTracker Export/submissionlist20261005132200-2026.xlsx",
-]
+# The newest export set in "PubTracker Export/", so every page counts the same submissions.
+PUBTRACKER_GAP_PATHS = [project_root / path for path in find_export_set()]
 GAP_MIN_THRESHOLD = 70
 SOURCE_CSV = project_root / "data/varr_baseline_FY26.csv"
 OUTPUT_DIR = project_root / "docs/data"
@@ -110,7 +110,7 @@ def build_compliance_payload() -> dict | None:
     payload is published to the public GitHub Pages site.
     """
     # Same PubTracker exports as Build 02, so every page counts the same submissions.
-    pt_path = PUBTRACKER_GAP_PATHS if all(p.exists() for p in PUBTRACKER_GAP_PATHS) else find_latest_export()
+    pt_path = PUBTRACKER_GAP_PATHS if all(p.exists() for p in PUBTRACKER_GAP_PATHS) else None
     if pt_path is None:
         return None
 
@@ -133,8 +133,7 @@ def build_compliance_payload() -> dict | None:
     # identically to every quarter, so quarter-over-quarter Dimensions counts differ.
     dim_pub_list, _ = process_dimensions_by_quarter(dim_raw)
 
-    pt_raw = pd.concat([pd.read_excel(p, sheet_name=0) for p in (pt_path if isinstance(pt_path, list) else [pt_path])],
-                       ignore_index=True)
+    pt_raw = pd.concat([read_export(p) for p in pt_path], ignore_index=True)
     pt_counts, _ = process_pubtracker(pt_raw)
 
     vamc_ref = load_vamc_reference()

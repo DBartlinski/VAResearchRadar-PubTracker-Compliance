@@ -10,6 +10,7 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(__file__))
 
 from processors.dashboard_data import DashboardDataset, load_dashboard_dataset, split_values
+from processors.pubtracker_crossref import find_export_set
 from processors.pubtracker_compliance import (
     UNATTRIBUTED,
     add_record_links,
@@ -31,10 +32,7 @@ from processors.pubtracker_compliance import (
 
 
 DATA_PATH = Path("data/varr_baseline_FY26.csv")
-PUBTRACKER_PATHS = [
-    Path("PubTracker Export/submissionlist20261005132200-2025.xlsx"),
-    Path("PubTracker Export/submissionlist20261005132200-2026.xlsx"),
-]
+PUBTRACKER_PATHS = find_export_set()
 COMPLIANCE_TAB_TITLE = "Dimensions-PubTracker Complience Oct 2026"
 DIM_TO_PT_TAB_TITLE = "Dimensions to PubTracker (Build 01)"
 BUILD_02_TAB_TITLE = "Not in PubTracker (Build 02)"

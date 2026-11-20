@@ -18,6 +18,31 @@ A copy of the [PubTracker compliance tool](https://github.com/DBartlinski/PubTra
    python build_static_dashboard_data.py
    ```
 
+## Updating the PubTracker data
+
+The PubTracker exports are gitignored (`*.xlsx`; keep CSVs out of commits too), so they stay on your machine and only the aggregated results in `docs/data/` are published.
+
+1. Export the submission list from PubTracker.
+2. Save it in `PubTracker Export/` with this name:
+
+   ```
+   submissionlist<YYYYMMDDHHMMSS>[-<label>].xlsx   (or .csv)
+   ```
+
+   - `<YYYYMMDDHHMMSS>` is the export timestamp (14 digits), for example `20261120101500`.
+   - The optional `-<label>` (letters, digits, `_` or `.`) is for splitting one export across several files, for example one per year: `submissionlist20261120101500-2025.xlsx` and `submissionlist20261120101500-2026.xlsx`.
+   - Files that do not start with `submissionlist` followed by 14 digits are ignored.
+3. Rebuild. Only the files that share the **newest timestamp** are used, so older exports can stay in the folder without being double counted. A new export therefore needs no code changes. Every file in the set must have the PubTracker columns (`Record ID`, `Title`, `Submittion Type`, `POC Medical Center Number`, `Publication Date`, `Date Created`, ...).
+
+   ```
+   .\refresh.ps1
+   ```
+
+   Add `-Db "<path>\vadaily.db"` to re-export the VARR baseline first. The script rebuilds `docs/data/` and prints a summary. It does not commit or push.
+4. Review `git status` and `git diff --stat docs`, then commit and push to publish. The Pages workflow redeploys on push.
+
+The local Streamlit app (`streamlit run dashboard.py`) picks up the newest export set each time it starts or reruns, and reloads when a file's modification time changes.
+
 ## Differences from the Dimensions baseline
 
 - Publication IDs are VARR keys (`doi:...`) unless the record carries a Dimensions ID. Dimensions links appear only for `pub.*` IDs.
