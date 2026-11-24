@@ -159,7 +159,7 @@
 
   async function init() {
     try {
-      const resp = await fetch(`./data/not_in_pubtracker.json?v=${Date.now()}`, { cache: 'no-store' });
+      const resp = await fetch(`${dataUrl("not_in_pubtracker.json")}?v=${Date.now()}`, { cache: 'no-store' });
       payload = resp.ok ? await resp.json() : null;
     } catch (e) {
       payload = null;

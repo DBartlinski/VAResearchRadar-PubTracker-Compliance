@@ -1,4 +1,7 @@
+import os
 import unittest
+
+os.environ["VARR_FY"] = "26"  # fixtures use FY26 dates
 
 import pandas as pd
 

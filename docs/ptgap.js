@@ -100,7 +100,7 @@
   async function init() {
     let data = null;
     try {
-      const resp = await fetch(`./data/pubtracker_gap.json?v=${Date.now()}`, { cache: 'no-store' });
+      const resp = await fetch(`${dataUrl("pubtracker_gap.json")}?v=${Date.now()}`, { cache: 'no-store' });
       data = resp.ok ? await resp.json() : null;
     } catch (e) {
       data = null;

@@ -16,6 +16,9 @@ import pandas as pd
 project_root = Path.cwd()
 sys.path.insert(0, str(project_root))
 
+from datetime import date
+
+from fiscal_year import BASELINE_CSV, FISCAL_YEAR, OUTPUT_DIR, write_fiscal_years_index
 from processors.dashboard_data import load_dashboard_dataset, split_values
 from processors.pubtracker_crossref import (
     find_export_set, load_pubtracker_submissions, read_export, _normalize_title,
@@ -38,8 +41,8 @@ from processors.pubtracker_compliance import (
 # The newest export set in "PubTracker Export/", so every page counts the same submissions.
 PUBTRACKER_GAP_PATHS = [project_root / path for path in find_export_set()]
 GAP_MIN_THRESHOLD = 70
-SOURCE_CSV = project_root / "data/varr_baseline_FY26.csv"
-OUTPUT_DIR = project_root / "docs/data"
+SOURCE_CSV = BASELINE_CSV
+OUTPUT_DIR = project_root / f"docs/data/FY{FISCAL_YEAR % 100}"
 
 PUBLICATION_COLUMNS = {
     "Publication ID": "id",
@@ -332,10 +335,13 @@ def main() -> None:
 
     meta = {
         "generatedFrom": SOURCE_CSV.name,
+        "fiscalYear": FISCAL_YEAR,
+        "generatedOn": date.today().isoformat(),
         "publicationCount": len(publications),
         "facilityMatchCount": len(matches),
     }
     (OUTPUT_DIR / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    write_fiscal_years_index()
 
     print(f"Wrote {pub_path} ({pub_path.stat().st_size / 1_048_576:.2f} MB)")
     print(f"Wrote {match_path} ({match_path.stat().st_size / 1_048_576:.2f} MB)")

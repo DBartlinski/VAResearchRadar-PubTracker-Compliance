@@ -22,12 +22,13 @@ import time
 from functools import lru_cache
 from pathlib import Path
 
+from fiscal_year import BASELINE_CSV, FY_END, FY_START
+
 DATA = Path(__file__).parent / "data"
-DEFAULT_OUT = DATA / "varr_baseline_FY26.csv"
+DEFAULT_OUT = BASELINE_CSV
 PRINT_CACHE = DATA / "crossref_print_dates.json"
 ISSUE_CACHE = DATA / "pubmed_issue_dates.json"
 EFETCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-FY_START, FY_END = "2025-10-01", "2026-09-30"
 CROSSREF = "https://api.crossref.org/works"
 CONTACT = "david.bartlinski@va.gov"
 DOIS_PER_REQUEST = 20

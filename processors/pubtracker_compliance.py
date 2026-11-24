@@ -17,8 +17,10 @@ from processors.dashboard_data import UMBRELLA_STATION_NUMBERS
 from processors.pubtracker_crossref import _normalize_title
 from processors.pubtracker_processor import get_quarter_date_range, get_quarter_label
 
-FY26_START = pd.Timestamp("2025-10-01")
-FY26_END = pd.Timestamp("2026-09-30")
+from fiscal_year import FISCAL_YEAR, FY_END as _FY_END, FY_SHORT, FY_START as _FY_START
+
+FY_START = pd.Timestamp(_FY_START)
+FY_END = pd.Timestamp(_FY_END)
 UNATTRIBUTED = "Unattributed (no VAMC match)"
 # Dimensions `Publication Type` values that are not published journal items; unknown values are kept.
 NON_PUBLICATION_TYPES = {"preprint", "chapter", "proceeding", "book", "monograph", "edited book", "seminar"}
@@ -66,9 +68,9 @@ def load_pubtracker_files(paths: list[str | Path], station_lookup: dict[str, set
     return raw[PUBTRACKER_COLUMNS + ["Publication Date", "PubTracker Date", "PubTracker Date Source", "_norm_title", "_facilities"]]
 
 
-def quarter_options(publications: pd.DataFrame, fiscal_year: int = 26) -> dict[str, tuple[pd.Timestamp, pd.Timestamp]]:
+def quarter_options(publications: pd.DataFrame, fiscal_year: int = FY_SHORT) -> dict[str, tuple[pd.Timestamp, pd.Timestamp]]:
     """Selectable periods (whole year plus each FY quarter present in the Dimensions data)."""
-    options = {f"Whole FY{fiscal_year}": (FY26_START, FY26_END)}
+    options = {f"Whole FY{fiscal_year}": (FY_START, FY_END)}
     present = set(publications["Fiscal Period"].dropna())
     for quarter in (1, 2, 3, 4):
         label = get_quarter_label(2000 + fiscal_year, quarter)
@@ -86,8 +88,8 @@ REASON_OUT_OF_RANGE = "Outside selected period"
 
 def exclusion_reasons(
     publications: pd.DataFrame,
-    start: pd.Timestamp = FY26_START,
-    end: pd.Timestamp = FY26_END,
+    start: pd.Timestamp = FY_START,
+    end: pd.Timestamp = FY_END,
 ) -> pd.Series:
     """First failing eligibility rule per record ('' = eligible and dated within [start, end])."""
     sop_eligible = publications["SOP Eligible"].astype(bool)
@@ -109,8 +111,8 @@ def exclusion_reasons(
 
 def filter_fiscal_year(
     publications: pd.DataFrame,
-    start: pd.Timestamp = FY26_START,
-    end: pd.Timestamp = FY26_END,
+    start: pd.Timestamp = FY_START,
+    end: pd.Timestamp = FY_END,
 ) -> tuple[pd.DataFrame, dict[str, int]]:
     """Keep published-item records dated within [start, end]; year-only dates cannot be placed."""
     reasons = exclusion_reasons(publications, start, end)

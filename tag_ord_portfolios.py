@@ -7,6 +7,7 @@ import pandas as pd
 project_root = Path.cwd()
 sys.path.insert(0, str(project_root))
 
+from fiscal_year import BASELINE_CSV
 from processors.dimensions_processor import read_dimensions_df
 from processors.ord_portfolio import (
     AMP_KEYWORD_PATTERNS,
@@ -14,7 +15,7 @@ from processors.ord_portfolio import (
     tag_publications,
 )
 
-SOURCE_CSV = project_root / "data/varr_baseline_FY26.csv"
+SOURCE_CSV = BASELINE_CSV
 OUTPUT_CSV = project_root / "output/dimensions_va_2025_2026/dimensions_va_2025_2026_ord_tagged.csv"
 
 

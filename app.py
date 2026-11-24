@@ -9,15 +9,14 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(__file__))
 
 from processors.pubtracker_processor import process_pubtracker, get_quarter_label
+from fiscal_year import BASELINE_CSV
 from processors.dimensions_processor import read_dimensions_df, process_dimensions_by_quarter
 from processors.compliance_calculator import calculate_compliance, load_vamc_reference
 from processors.pubtracker_crossref import find_export_set, find_latest_export, load_pubtracker_submissions, read_export, _normalize_title
 from processors.ord_portfolio import tag_publications
 
 # Default auto-loaded sources (matches the dataset used by dashboard.py / the static site)
-DEFAULT_DIMENSIONS_PATH = os.path.join(
-    os.path.dirname(__file__), 'data', 'varr_baseline_FY26.csv',
-)
+DEFAULT_DIMENSIONS_PATH = str(BASELINE_CSV)
 
 # ---------------------------------------------------------------------------
 # Page config
