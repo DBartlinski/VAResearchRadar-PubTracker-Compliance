@@ -6,6 +6,9 @@
   const chosen = fys.find(f => f.fy === requested) || fys[0] || { fy: 26 };
   window.VARR_FY = chosen.fy;
   window.dataUrl = name => `./data/FY${chosen.fy}/${name}`;
+  // After the refresh button, bypass the HTTP cache once so the newest published JSON is fetched.
+  window.VARR_CACHE = sessionStorage.getItem('varrRefresh') ? 'reload' : 'default';
+  sessionStorage.removeItem('varrRefresh');
 
   document.addEventListener('DOMContentLoaded', () => {
     const start = `Oct 1, ${2000 + chosen.fy - 1}`;
@@ -15,7 +18,21 @@
     document.querySelectorAll('.fy-updated').forEach(el => { el.textContent = chosen.updated || ''; });
 
     const host = document.querySelector('.hero .container-fluid, header .container-fluid, h1');
-    if (!host || fys.length < 2) return;
+    if (!host) return;
+    const refresh = document.createElement('button');
+    refresh.type = 'button';
+    refresh.className = 'btn btn-outline-light btn-sm ms-3';
+    refresh.textContent = '\u21BB Refresh data';
+    refresh.title = 'Re-fetch the latest published data';
+    refresh.addEventListener('click', async () => {
+      refresh.disabled = true;
+      refresh.textContent = 'Refreshing\u2026';
+      try { await fetch('./fiscal_years.js', { cache: 'reload' }); } catch (e) { /* offline: reload anyway */ }
+      sessionStorage.setItem('varrRefresh', '1');
+      location.reload();
+    });
+    host.appendChild(refresh);
+    if (fys.length < 2) return;
     const wrap = document.createElement('label');
     wrap.className = 'small ms-3 text-white';
     wrap.style.cssText = 'display:inline-flex;gap:.4rem;align-items:center;margin:.5rem 0';

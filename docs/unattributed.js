@@ -77,7 +77,7 @@
   }
 
   async function init() {
-    payload = await (await fetch(dataUrl('unattributed_va_funding.json'))).json();
+    payload = await (await fetch(dataUrl('unattributed_va_funding.json'), { cache: VARR_CACHE })).json();
     $('uaPeriod').innerHTML = Object.keys(payload.periods).map(k => `<option>${esc(k)}</option>`).join('');
     const parts = [...new Set(payload.records.flatMap(r => r[R.PARTS] ? r[R.PARTS].split('; ') : []))].sort();
     $('uaParts').innerHTML = '<option value="">All</option>' + parts.map(p => `<option>${esc(p)}</option>`).join('');

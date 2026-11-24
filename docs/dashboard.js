@@ -35,8 +35,8 @@ const NO_SIGNAL_LABEL = 'No ORD signal detected';
 // ============================================================
 async function loadData() {
   const [pubResp, matchResp] = await Promise.all([
-    fetch(dataUrl('publications.json')),
-    fetch(dataUrl('facility_matches.json')),
+    fetch(dataUrl('publications.json'), { cache: VARR_CACHE }),
+    fetch(dataUrl('facility_matches.json'), { cache: VARR_CACHE }),
   ]);
   if (!pubResp.ok) throw new Error(`Could not load publications.json (${pubResp.status})`);
   if (!matchResp.ok) throw new Error(`Could not load facility_matches.json (${matchResp.status})`);
@@ -84,7 +84,7 @@ function normalizeTitle(title) {
 
 async function loadPubtrackerLookup() {
   if (pubtrackerLookup) return pubtrackerLookup;
-  const resp = await fetch(dataUrl('pubtracker_crossref.json'));
+  const resp = await fetch(dataUrl('pubtracker_crossref.json'), { cache: VARR_CACHE });
   const rows = resp.ok ? await resp.json() : [];
   pubtrackerLookup = new Map(rows.map(r => [r.normTitle, r]));
   return pubtrackerLookup;
